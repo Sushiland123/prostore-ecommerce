@@ -62,7 +62,7 @@ export async function createOrder() {
 
     // Create a transaction to create order and order items in database
     const insertedOrderId = await prisma.$transaction(async (tx) => {
-      // Create order
+      // Create order (PENDING - no stock changes yet)
       const insertedOrder = await tx.order.create({ data: order });
       // Create order items from the cart items
       for (const item of cart.items as CartItem[]) {
@@ -74,17 +74,8 @@ export async function createOrder() {
           },
         });
       }
-      // Clear cart
-      await tx.cart.update({
-        where: { id: cart.id },
-        data: {
-          items: [],
-          totalPrice: 0,
-          taxPrice: 0,
-          shippingPrice: 0,
-          itemsPrice: 0,
-        },
-      });
+      // DON'T clear cart yet - keep it until payment is confirmed
+      // DON'T update stock yet - wait for payment confirmation
 
       return insertedOrder.id;
     });
@@ -246,6 +237,24 @@ export async function updateOrderToPaid({
         paymentResult,
       },
     });
+
+    // NOW clear the user's cart (payment confirmed)
+    const userCart = await tx.cart.findFirst({
+      where: { userId: order.userId },
+    });
+    
+    if (userCart) {
+      await tx.cart.update({
+        where: { id: userCart.id },
+        data: {
+          items: [],
+          totalPrice: 0,
+          taxPrice: 0,
+          shippingPrice: 0,
+          itemsPrice: 0,
+        },
+      });
+    }
   });
 
   // Get updated order after transaction
